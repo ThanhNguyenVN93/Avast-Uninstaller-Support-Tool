@@ -1,0 +1,21 @@
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.rsuser
+
+# Build output
+[Dd]ebug/
+[Rr]elease/
+bin/
+obj/
+
+# Logs & temp
+*.log
+icarus.log
+
+# Test/debug files
+bin/Debug/*.txt
+bin/Release/*.txt
