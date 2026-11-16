@@ -1,0 +1,8 @@
+# SHA-256 hashes for embedded binary resources.
+# Format: <uppercase SHA-256 hex>  <path relative to repo root>
+#
+# To generate a hash:
+#   certutil -hashfile avast_av_clear.exe SHA256
+#
+# Uncomment and update the line below with the real hash of your avast_av_clear.exe:
+# AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA  avast_av_clear.exe

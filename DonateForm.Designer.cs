@@ -17,19 +17,20 @@ namespace frm_avast_uninstaller
         {
             this.components      = new System.ComponentModel.Container();
             this.AutoScaleMode   = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize      = new System.Drawing.Size(560, 468);
-            this.Text            = Strings.DonateTitle;
+            this.ClientSize      = new System.Drawing.Size(580, 500);
+            this.Text            = Loc.T("donate_title");
             this.BackColor       = System.Drawing.Color.White;
-            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
+            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedSingle;
             this.MaximizeBox     = false;
-            this.MinimizeBox     = false;
-            this.StartPosition   = System.Windows.Forms.FormStartPosition.CenterParent;
+            this.StartPosition   = System.Windows.Forms.FormStartPosition.CenterScreen;
             try
             {
-                this.Icon = System.Drawing.Icon.ExtractAssociatedIcon(
-                    System.Windows.Forms.Application.ExecutablePath);
+                string exePath = System.Windows.Forms.Application.ExecutablePath;
+                if (!string.IsNullOrEmpty(exePath) && System.IO.File.Exists(exePath))
+                    this.Icon = System.Drawing.Icon.ExtractAssociatedIcon(exePath);
             }
-            catch { }
+            catch (System.ArgumentException) { }
+            catch (System.IO.FileNotFoundException) { }
         }
 
         #endregion

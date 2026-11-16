@@ -1,0 +1,166 @@
+name: Security
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  schedule:
+    - cron: '0 8 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  binary-integrity:
+    name: Verify embedded binary hashes
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check embedded binary hashes
+        shell: pwsh
+        run: |
+          $failed = $false
+          $hashFile = ".github/embedded-hashes.sha256"
+          if (-not (Test-Path $hashFile)) {
+            Write-Host "::warning::No hash file found at $hashFile — skipping binary integrity check."
+            Write-Host "Run: certutil -hashfile <file> SHA256 and save to $hashFile"
+            exit 0
+          }
+          foreach ($line in (Get-Content $hashFile)) {
+            $line = $line.Trim()
+            if (-not $line -or $line.StartsWith('#')) { continue }
+            $parts = $line -split '\s+', 2
+            if ($parts.Count -ne 2) { continue }
+            $expectedHash = $parts[0].ToUpper()
+            $filePath = $parts[1]
+            if (-not (Test-Path $filePath)) {
+              Write-Host "::warning::File not found: $filePath (may be gitignored)"
+              continue
+            }
+            $actual = (Get-FileHash $filePath -Algorithm SHA256).Hash.ToUpper()
+            if ($actual -ne $expectedHash) {
+              Write-Host "::error file=$filePath::Hash mismatch! Expected $expectedHash, got $actual"
+              $failed = $true
+            } else {
+              Write-Host "OK: $filePath ($actual)"
+            }
+          }
+          if ($failed) { exit 1 }
+
+  static-analysis:
+    name: Static analysis
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: microsoft/setup-msbuild@v2
+      - uses: nuget/setup-nuget@v2
+
+      - name: Materialize example config files
+        shell: pwsh
+        run: |
+          Get-ChildItem -Recurse -Filter *.config.example |
+            Where-Object { $_.FullName -notmatch '\\(bin|obj|\.claude|\.vs)\\' } |
+            ForEach-Object {
+              $dest = $_.FullName -replace '\.example$', ''
+              if (-not (Test-Path $dest)) { Copy-Item $_.FullName $dest }
+            }
+
+      - name: Create placeholders for missing embedded resources
+        shell: pwsh
+        run: |
+          $placeholder = [byte[]](0xFF,0xD8,0xFF,0xE0,0x00,0x10,0x4A,0x46,0x49,0x46,0x00,0x01,0x01,0x00,0x00,0x01,0x00,0x01,0x00,0x00,0xFF,0xDB,0x00,0x43,0x00,0x03,0x02,0x02,0x02,0x02,0x02,0x03,0x02,0x02,0x02,0x03,0x03,0x03,0x03,0x04,0x06,0x04,0x04,0x04,0x04,0x04,0x08,0x06,0x06,0x05,0x06,0x09,0x08,0x0A,0x0A,0x09,0x08,0x09,0x09,0x0A,0x0C,0x0F,0x0C,0x0A,0x0B,0x0E,0x0B,0x09,0x09,0x0D,0x11,0x0D,0x0E,0x0F,0x10,0x10,0x11,0x10,0x0A,0x0C,0x12,0x13,0x12,0x10,0x13,0x0F,0x10,0x10,0x10,0xFF,0xC9,0x00,0x0B,0x08,0x00,0x01,0x00,0x01,0x01,0x01,0x11,0x00,0xFF,0xCC,0x00,0x06,0x00,0x10,0x10,0x05,0xFF,0xDA,0x00,0x08,0x01,0x01,0x00,0x00,0x3F,0x00,0xD2,0xCF,0x20,0xFF,0xD9)
+          $paths = New-Object System.Collections.Generic.HashSet[string]
+          Get-ChildItem -Recurse -Filter *.csproj |
+            Where-Object { $_.FullName -notmatch '\\(bin|obj|\.claude|\.vs)\\' } |
+            ForEach-Object {
+              $projDir = $_.Directory.FullName
+              $xml = [xml](Get-Content $_.FullName -Raw)
+              $includes = @()
+              $includes += $xml.Project.ItemGroup.EmbeddedResource | ForEach-Object { $_.Include }
+              $includes += $xml.Project.ItemGroup.None | ForEach-Object { $_.Include }
+              foreach ($inc in $includes) {
+                if ($inc) {
+                  try {
+                    $full = [System.IO.Path]::GetFullPath((Join-Path $projDir $inc))
+                    [void]$paths.Add($full)
+                  } catch {}
+                }
+              }
+            }
+          foreach ($p in $paths) {
+            if (-not (Test-Path $p)) {
+              $dir = Split-Path $p -Parent
+              if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+              Write-Host "Placeholder: $p"
+              [System.IO.File]::WriteAllBytes($p, $placeholder)
+            }
+          }
+
+      - name: Restore packages
+        shell: pwsh
+        run: |
+          $targets = Get-ChildItem -Filter *.csproj | Select-Object -First 1
+          if ($targets) {
+            nuget restore $targets.FullName -PackagesDirectory (Join-Path $targets.DirectoryName "packages")
+            msbuild $targets.FullName /t:Restore /p:Configuration=Release
+          }
+
+      - name: Build with warnings-as-errors and code analysis
+        shell: pwsh
+        env:
+          FX_REF: C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8
+        run: |
+          $targets = Get-ChildItem -Filter *.csproj | Select-Object -First 1
+          if ($targets) {
+            msbuild $targets.FullName /p:Configuration=Release /p:FrameworkPathOverride="$env:FX_REF" /p:TreatWarningsAsErrors=true /p:RunCodeAnalysis=true
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+  dependency-check:
+    name: Check for known vulnerabilities in dependencies
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for outdated .NET Framework
+        shell: pwsh
+        run: |
+          $csproj = Get-ChildItem -Filter *.csproj -Recurse |
+            Where-Object { $_.FullName -notmatch '\\(bin|obj|\.claude|\.vs)\\' } |
+            Select-Object -First 1
+          if ($csproj) {
+            $xml = [xml](Get-Content $csproj.FullName -Raw)
+            $tfv = $xml.Project.PropertyGroup | ForEach-Object { $_.TargetFrameworkVersion } | Where-Object { $_ } | Select-Object -First 1
+            Write-Host "Target framework: $tfv"
+            if ($tfv -and $tfv -lt "v4.6.2") {
+              Write-Host "::error::.NET Framework $tfv is below the security baseline (v4.6.2+)"
+              exit 1
+            }
+          }
+
+      - name: Scan for hardcoded secrets
+        shell: pwsh
+        run: |
+          $patterns = @(
+            'password\s*=\s*"[^"]+"',
+            'apikey\s*=\s*"[^"]+"',
+            'secret\s*=\s*"[^"]+"',
+            'connectionstring\s*=\s*"[^"]*password[^"]*"'
+          )
+          $found = $false
+          foreach ($file in (Get-ChildItem -Recurse -Include *.cs,*.config,*.json |
+            Where-Object { $_.FullName -notmatch '\\(bin|obj|\.claude|\.vs|node_modules)\\' })) {
+            $content = Get-Content $file.FullName -Raw -ErrorAction SilentlyContinue
+            if (-not $content) { continue }
+            foreach ($p in $patterns) {
+              if ($content -match $p) {
+                Write-Host "::warning file=$($file.FullName)::Possible hardcoded secret matching pattern: $p"
+                $found = $true
+              }
+            }
+          }
+          if ($found) {
+            Write-Host "::warning::Potential secrets detected — review the warnings above."
+          }
