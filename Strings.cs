@@ -31,6 +31,14 @@ namespace frm_avast_uninstaller
             Vi ? "Không tìm thấy avastclear.exe trong resources."
                : "avastclear.exe not found in embedded resources.";
 
+        public static string UninstallerStartFailed =>
+            Vi ? "Không thể khởi chạy avastclear.exe."
+               : "Failed to start avastclear.exe.";
+
+        public static string HashMismatch =>
+            Vi ? "File avastclear.exe nhúng không khớp hash SHA-256. Có thể file đã bị thay đổi."
+               : "Embedded avastclear.exe SHA-256 hash mismatch. The file may have been tampered with.";
+
         public static string UninstallBanner =>
             Vi ? "✓  Đã gỡ cài đặt Avast hoàn tất!"
                : "✓  Avast has been successfully removed!";
@@ -41,6 +49,30 @@ namespace frm_avast_uninstaller
 
         public static string DoneTitle  => Vi ? "Hoàn Tất" : "Done";
         public static string ErrorTitle => Vi ? "Lỗi"      : "Error";
+
+        public static string AlreadyRunning =>
+            Vi ? "Ứng dụng đang chạy. Không thể mở thêm instance."
+               : "Application is already running. Cannot open another instance.";
+
+        public static string RunOnceWriteFailed =>
+            Vi ? "Không thể ghi registry RunOnce. Máy tính sẽ không tự chạy tool sau khi khởi động lại."
+               : "Failed to write RunOnce registry entry. The tool will not auto-run after restart.";
+
+        public static string WindowsDirNotFound =>
+            Vi ? "Không tìm thấy thư mục Windows."
+               : "Windows directory not found.";
+
+        public static string SystemExeNotFound(string exe) =>
+            Vi ? $"Không tìm thấy {exe} trong thư mục hệ thống."
+               : $"{exe} not found in system directory.";
+
+        public static string ProcessStartFailed(string exe) =>
+            Vi ? $"Không thể khởi chạy {exe}."
+               : $"Failed to start {exe}.";
+
+        public static string BcdeditFailed(int exitCode) =>
+            Vi ? $"bcdedit thất bại (exit code {exitCode}). Cấu hình boot không được thay đổi."
+               : $"bcdedit failed (exit code {exitCode}). Boot configuration was not changed.";
 
         // ── DonateForm ───────────────────────────────────────────────────
         public static string DonateTitle =>

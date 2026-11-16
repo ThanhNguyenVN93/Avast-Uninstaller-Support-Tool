@@ -26,10 +26,12 @@ namespace frm_avast_uninstaller
             this.StartPosition   = System.Windows.Forms.FormStartPosition.CenterScreen;
             try
             {
-                this.Icon = System.Drawing.Icon.ExtractAssociatedIcon(
-                    System.Windows.Forms.Application.ExecutablePath);
+                string exePath = System.Windows.Forms.Application.ExecutablePath;
+                if (!string.IsNullOrEmpty(exePath) && System.IO.File.Exists(exePath))
+                    this.Icon = System.Drawing.Icon.ExtractAssociatedIcon(exePath);
             }
-            catch { }
+            catch (System.ArgumentException) { }
+            catch (System.IO.FileNotFoundException) { }
         }
 
         #endregion

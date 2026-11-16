@@ -1,7 +1,6 @@
 using System;
 using System.Drawing;
 using System.Windows.Forms;
-using Microsoft.Win32;
 
 namespace frm_avast_uninstaller
 {
@@ -102,21 +101,63 @@ namespace frm_avast_uninstaller
                 lblCountdown.Visible = false;
                 btnAction.Enabled    = false;
 
-                using (var hklm = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64))
-                using (var key  = hklm.OpenSubKey(Program.RunOncePath, writable: true))
-                    key.SetValue(Program.RunOnceKeySafe, "\"" + Application.ExecutablePath + "\"");
+                // #6 fix: use SetRunOnceKey which returns success/failure and null-checks
+                if (!SetRunOnceForSafeMode())
+                {
+                    throw new InvalidOperationException(Strings.RunOnceWriteFailed);
+                }
 
-                Program.RunSysCmd("bcdedit.exe", "/set {current} safeboot minimal");
+                // #17/#7 fix: bcdedit runs only AFTER RunOnce is confirmed written
+                int exitCode = Program.RunSysCmd("bcdedit.exe", "/set {current} safeboot minimal");
+                if (exitCode != 0)
+                {
+                    throw new InvalidOperationException(Strings.BcdeditFailed(exitCode));
+                }
+
                 Program.RunSysCmd("shutdown.exe", "/r /t 5");
                 Close();
             }
             catch (Exception ex)
             {
-                lblStatus.Text    = Strings.ErrorPrefix + ex.Message;
+                // #7 fix: if bcdedit already ran, try to undo it
+                TryRollbackSafeboot();
+
+                // #10 fix: sanitize error message before displaying
+                lblStatus.Text       = Strings.ErrorPrefix + Program.SanitizeErrorMessage(ex.Message);
                 lblCountdown.Visible = true;
                 btnAction.Enabled    = true;
                 countdownTimer.Start();
             }
+        }
+
+        // #6 fix: null-safe RunOnce write with verification
+        private static bool SetRunOnceForSafeMode()
+        {
+            try
+            {
+                using (var hklm = Microsoft.Win32.RegistryKey.OpenBaseKey(
+                    Microsoft.Win32.RegistryHive.LocalMachine, Microsoft.Win32.RegistryView.Registry64))
+                using (var key = hklm.OpenSubKey(Program.RunOncePath, writable: true))
+                {
+                    if (key == null) return false;
+                    string exePath = Application.ExecutablePath;
+                    key.SetValue(Program.RunOnceKeySafe, "\"" + exePath + "\"");
+
+                    var written = key.GetValue(Program.RunOnceKeySafe) as string;
+                    return written != null && written.Contains(exePath);
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        // #7 fix: best-effort rollback if we set safeboot but something else failed
+        private static void TryRollbackSafeboot()
+        {
+            try { Program.RunSysCmd("bcdedit.exe", "/deletevalue {current} safeboot"); }
+            catch { }
         }
 
         private static Label MakeLabel(Point loc, Size size, float fontSize,
