@@ -18,7 +18,7 @@ namespace frm_avast_uninstaller
             this.components      = new System.ComponentModel.Container();
             this.AutoScaleMode   = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize      = new System.Drawing.Size(580, 500);
-            this.Text            = Strings.DonateTitle;
+            this.Text            = Loc.T("donate_title");
             this.BackColor       = System.Drawing.Color.White;
             this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedSingle;
             this.MaximizeBox     = false;

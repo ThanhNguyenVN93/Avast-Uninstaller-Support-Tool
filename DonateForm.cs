@@ -61,7 +61,7 @@ namespace frm_avast_uninstaller
                     ForeColor = Color.FromArgb(27, 128, 60),
                     BackColor = Color.Transparent,
                     TextAlign = ContentAlignment.MiddleLeft,
-                    Text      = Strings.UninstallBanner,
+                    Text      = Loc.T("uninstall_banner"),
                 };
                 pnlBanner.Controls.Add(lblDone);
                 Controls.Add(pnlBanner);
@@ -77,7 +77,7 @@ namespace frm_avast_uninstaller
                 Font      = new Font("Segoe UI", 9.5f, FontStyle.Regular),
                 ForeColor = Color.FromArgb(100, 100, 100),
                 TextAlign = ContentAlignment.MiddleCenter,
-                Text      = Strings.DonateThanks,
+                Text      = Loc.T("donate_thanks"),
             };
             Controls.Add(lblHeader);
             y += 50;
@@ -94,12 +94,12 @@ namespace frm_avast_uninstaller
             // ── QR columns ───────────────────────────────────────────────
             int colLeft = 40, colRight = 310;
 
-            Controls.Add(MakeBankLabel(new Point(colLeft, y), Strings.DonateTCB));
+            Controls.Add(MakeBankLabel(new Point(colLeft, y), Loc.T("donate_tcb")));
             pbTcb = MakeQrBox(new Point(colLeft, y + 30));
             pbTcb.Image = Program.LoadImage("tcb.jpg");
             Controls.Add(pbTcb);
 
-            Controls.Add(MakeBankLabel(new Point(colRight, y), Strings.DonateMoMo));
+            Controls.Add(MakeBankLabel(new Point(colRight, y), Loc.T("donate_momo")));
             pbMomo = MakeQrBox(new Point(colRight, y + 30));
             pbMomo.Image = Program.LoadImage("momo.jpg");
             Controls.Add(pbMomo);
@@ -119,7 +119,7 @@ namespace frm_avast_uninstaller
             // ── Buttons row ──────────────────────────────────────────────
             var btnClose = new Button
             {
-                Text      = Strings.DonateClose,
+                Text      = Loc.T("donate_close"),
                 Location  = new Point(310, btnY),
                 Size      = new Size(230, 38),
                 Font      = new Font("Segoe UI", 10, FontStyle.Bold),
@@ -140,13 +140,13 @@ namespace frm_avast_uninstaller
                 Location  = new Point(40, btnY + 10),
                 Font      = new Font("Segoe UI", 8.5f, FontStyle.Regular),
                 LinkColor = Color.FromArgb(0, 102, 204),
-                Text      = Strings.ReportIssue,
+                Text      = Loc.T("btn_report"),
             };
             lnkReport.LinkClicked += (s, ev) =>
             {
                 try
                 {
-                    Process.Start(new ProcessStartInfo(Strings.ReportIssueUrl)
+                    Process.Start(new ProcessStartInfo(Loc.ReportIssuesUrl)
                     {
                         UseShellExecute = true,
                     });
