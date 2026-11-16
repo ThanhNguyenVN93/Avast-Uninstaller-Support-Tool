@@ -34,6 +34,14 @@ namespace frm_avast_uninstaller
                     headline = avastPresent ? Loc.T("result_warning") : Loc.T("result_success");
                     headColor = avastPresent ? Color.FromArgb(255, 193, 7) : Color.FromArgb(76, 175, 80);
                     break;
+                case "Warning":
+                    headline = avastPresent ? Loc.T("result_warning") : Loc.T("result_success");
+                    headColor = avastPresent ? Color.FromArgb(255, 193, 7) : Color.FromArgb(76, 175, 80);
+                    break;
+                case "Failed":
+                    headline = Loc.T("result_failed");
+                    headColor = Color.FromArgb(244, 67, 54);
+                    break;
                 case "Error":
                     headline = Loc.T("result_error");
                     headColor = Color.FromArgb(244, 67, 54);

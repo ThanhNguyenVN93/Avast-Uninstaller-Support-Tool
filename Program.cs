@@ -19,7 +19,7 @@ namespace frm_avast_uninstaller
 {
     internal static class Program
     {
-        internal const string AppVersion = "2.0.0";
+        internal const string AppVersion = "2.0.1";
 
         private static Mutex _singleInstanceMutex;
 
@@ -89,8 +89,17 @@ namespace frm_avast_uninstaller
 
                 if (HasArg(args, "--result"))
                 {
-                    Application.Run(new ResultForm());
+                    TryRemoveSafeboot();
+                    if (WasJustUninstalled()) HandleNormalModeCleanup();
+                    else Application.Run(new ResultForm());
                     return;
+                }
+
+                // User hit "Restart now" inside avastclear: Safe Mode handler never finished.
+                if (GetState("Armed") == "1" && !WasJustUninstalled() && !AvastCoreInstalled())
+                {
+                    Log("Safe Mode session was interrupted but Avast core is gone; finishing in normal mode.");
+                    SetState("LastResult", AvastInstalled() ? "Warning" : "Success");
                 }
 
                 UndoAllBootTriggers();
@@ -191,24 +200,43 @@ namespace frm_avast_uninstaller
             try
             {
                 bool cleanLeftovers = GetState("CleanLeftovers") == "1";
-                int passes = 2;
 
-                for (int pass = 1; pass <= passes; pass++)
+                bool completed;
+                if (!AvastCoreInstalled())
                 {
-                    Log("Uninstall pass " + pass + "/" + passes);
-                    RunEmbeddedUninstaller(interactive: false);
-                    if (!AvastInstalled()) break;
+                    Log("Avast core not installed; nothing for avastclear to do.");
+                    completed = true;
+                }
+                else
+                {
+                    Log("Uninstall pass 1: avastclear /silent");
+                    int rc = RunEmbeddedUninstaller(interactive: false, args: "/silent", driveUi: false);
+                    completed = AvastClearCompleted(rc);
+
+                    if (!completed)
+                    {
+                        Log("Pass 1 refused (" + rc + "); pass 2: avastclear with UI automation");
+                        rc = RunEmbeddedUninstaller(interactive: false, args: "", driveUi: true);
+                        completed = AvastClearCompleted(rc) || rc == AvastClearClosedByDriver;
+                    }
                 }
 
-                if (cleanLeftovers)
+                // Registry/services are only finalised after reboot, so judge by avastclear itself.
+                if (!completed)
                 {
-                    Log("Cleaning leftover Avast services/folders...");
-                    CleanAvastLeftovers();
+                    Log("avastclear did not complete; skipping leftover cleanup.");
+                    SetState("LastResult", "Failed");
                 }
-
-                bool still = AvastInstalled();
-                SetState("LastResult", still ? "Warning" : "Success");
-                Log("Safe Mode done. Avast still present: " + still);
+                else
+                {
+                    if (cleanLeftovers)
+                    {
+                        Log("Cleaning leftover Avast services/folders...");
+                        CleanAvastLeftovers();
+                    }
+                    SetState("LastResult", AvastInstalled() ? "Warning" : "Success");
+                }
+                Log("Safe Mode done. completed=" + completed + ", uninstallEntry=" + AvastUninstallEntryExists() + ", traces=" + AvastInstalled());
 
                 DeleteRunOnceKey(RunOnceKeySafe);
                 RestoreAlternateShell();
@@ -243,16 +271,29 @@ namespace frm_avast_uninstaller
             try
             {
                 AutoLogon.Disable();
-                RunIcarusUninstaller();
-                if (GetState("CleanLeftovers") == "1")
-                    CleanAvastLeftovers();
-                else
-                    CleanLeftoverRegistry();
-                ClearState("SafeModeCompleted");
-
                 string result = GetState("LastResult");
-                if (result == "Success" || result == "Warning")
+                Log("Normal mode after Safe Mode. LastResult=" + result);
+
+                if (result == "Failed")
                 {
+                    Application.Run(new ResultForm());
+                    return;
+                }
+
+                RunIcarusUninstaller();
+                if (!AvastCoreInstalled())
+                {
+                    if (GetState("CleanLeftovers") == "1")
+                        CleanAvastLeftovers();
+                    else
+                        CleanLeftoverRegistry();
+                }
+                ClearState("SafeModeCompleted");
+                ClearState("CleanLeftovers");
+
+                if ((result == "Success" || result == "Warning") && !AvastCoreInstalled())
+                {
+                    ClearState("LastResult");
                     Application.Run(new DonateForm(showCompletion: true));
                 }
                 else
@@ -347,7 +388,6 @@ namespace frm_avast_uninstaller
             ClearState("Armed");
             ClearState("ArmTime");
             ClearState("SafeModeAttempts");
-            ClearState("CleanLeftovers");
         }
 
         private static void SetAlternateShell(string exePath)
@@ -459,6 +499,89 @@ namespace frm_avast_uninstaller
         }
 
         // ── Avast detection ──────────────────────────────────────────────
+        // Core = the product itself (uninstall entry or main service), not stray files.
+        internal static bool AvastCoreInstalled()
+        {
+            foreach (var svc in new[] { "AvastSvc", "avast! Antivirus" })
+            {
+                try
+                {
+                    using (var sc = new System.ServiceProcess.ServiceController(svc))
+                    {
+                        var _ = sc.Status;
+                        return true;
+                    }
+                }
+                catch { }
+            }
+
+            string[] uninstKeys = {
+                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+            };
+            foreach (var path in uninstKeys)
+            {
+                try
+                {
+                    using (var root = Registry.LocalMachine.OpenSubKey(path))
+                    {
+                        if (root == null) continue;
+                        foreach (var sub in root.GetSubKeyNames())
+                        {
+                            using (var k = root.OpenSubKey(sub))
+                            {
+                                string dn = k?.GetValue("DisplayName") as string;
+                                if (dn != null
+                                    && dn.IndexOf("Avast", StringComparison.OrdinalIgnoreCase) >= 0
+                                    && dn.IndexOf("Uninstaller Support", StringComparison.OrdinalIgnoreCase) < 0)
+                                    return true;
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+            return false;
+        }
+
+        private static bool AvastClearCompleted(int exitCode)
+        {
+            return exitCode != AvastClearNotRun
+                && exitCode != AvastClearRefused
+                && exitCode != 1073807364; // 0x40010004: closed without running
+        }
+
+        internal static bool AvastUninstallEntryExists()
+        {
+            string[] uninstKeys = {
+                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+            };
+            foreach (var path in uninstKeys)
+            {
+                try
+                {
+                    using (var root = Registry.LocalMachine.OpenSubKey(path))
+                    {
+                        if (root == null) continue;
+                        foreach (var sub in root.GetSubKeyNames())
+                        {
+                            using (var k = root.OpenSubKey(sub))
+                            {
+                                string dn = k?.GetValue("DisplayName") as string;
+                                if (dn != null
+                                    && dn.IndexOf("Avast", StringComparison.OrdinalIgnoreCase) >= 0
+                                    && dn.IndexOf("Uninstaller Support", StringComparison.OrdinalIgnoreCase) < 0)
+                                    return true;
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+            return false;
+        }
+
         internal static bool AvastInstalled()
         {
             string[] services = { "AvastSvc", "aswbIDSAgent", "avast! Antivirus", "AvastWscReporter" };
@@ -583,7 +706,34 @@ namespace frm_avast_uninstaller
         // ── Embedded uninstaller ─────────────────────────────────────────
         internal static void RunEmbeddedUninstaller(bool interactive)
         {
-            if (!CheckDiskSpace()) return;
+            RunEmbeddedUninstaller(interactive, "", driveUi: false);
+        }
+
+        // Exit codes observed from Avast AV Clear (Icarus SFX):
+        //   46002 = refused (silent not supported / needs UI), 44120 & 111111 = finished (restart now/later)
+        internal const int AvastClearRefused = 46002;
+        internal const int AvastClearNotRun = -1;
+        internal const int AvastClearClosedByDriver = -2;
+
+        internal static string AvastProgressSignature()
+        {
+            int files = 0;
+            string[] roots = {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Avast Software"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Avast Software"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Avast Software"),
+            };
+            foreach (var r in roots)
+            {
+                try { if (Directory.Exists(r)) files += Directory.GetFiles(r, "*", SearchOption.AllDirectories).Length; }
+                catch { }
+            }
+            return "entry=" + (AvastUninstallEntryExists() ? 1 : 0) + ";files=" + files;
+        }
+
+        internal static int RunEmbeddedUninstaller(bool interactive, string args, bool driveUi)
+        {
+            if (!CheckDiskSpace()) return AvastClearNotRun;
 
             string staged = Path.Combine(LocalDir(), "avastclear_staged.exe");
             string tempDir = Path.Combine(Path.GetTempPath(), "frm_avast_" + Path.GetRandomFileName());
@@ -618,7 +768,7 @@ namespace frm_avast_uninstaller
                         if (s == null)
                         {
                             Log("ERROR: avastclear.exe not found in embedded resources.");
-                            return;
+                            return AvastClearNotRun;
                         }
                         using (var ms = new MemoryStream())
                         {
@@ -639,10 +789,11 @@ namespace frm_avast_uninstaller
                 if (Verify.TryGetSigner(dest, out signer))
                     Log("avastclear signer: " + signer);
 
-                int timeoutMs = interactive ? 30 * 60 * 1000 : 5 * 60 * 1000;
+                // driveUi still needs the user for the self-defense prompt and Restart screen.
+                int timeoutMs = interactive ? 30 * 60 * 1000 : (driveUi ? 30 : 5) * 60 * 1000;
 
-                string args = interactive ? "" : "/silent /uninstallonly";
-                Log("Starting avastclear: " + dest + (string.IsNullOrEmpty(args) ? "" : " " + args));
+                Log("Starting avastclear: " + dest + (string.IsNullOrEmpty(args) ? "" : " " + args)
+                    + (driveUi ? " [UI automation]" : ""));
 
                 using (var proc = Process.Start(new ProcessStartInfo(dest)
                 {
@@ -654,20 +805,30 @@ namespace frm_avast_uninstaller
                     if (proc == null)
                     {
                         Log("ERROR: Failed to start avastclear.exe");
-                        return;
+                        return AvastClearNotRun;
                     }
 
-                    bool exited = proc.WaitForExit(timeoutMs);
+                    var started = Stopwatch.StartNew();
+                    if (driveUi)
+                    {
+                        bool clicked = UiDriver.DriveAvastClear(proc, timeoutMs, AvastProgressSignature);
+                        Log("UI automation " + (clicked ? "clicked Remove" : "did not find the Avast AV Clear window"));
+                        if (clicked && proc.WaitForExit(5000) && proc.ExitCode == -1)
+                            return AvastClearClosedByDriver;
+                    }
+
+                    int remaining = (int)Math.Max(1000, timeoutMs - started.ElapsedMilliseconds);
+                    bool exited = proc.WaitForExit(remaining);
                     if (!exited)
                     {
                         Log("avastclear.exe timed out after " + (timeoutMs / 1000) + "s, killing.");
                         try { proc.Kill(); } catch { }
                         proc.WaitForExit(5000);
+                        return AvastClearNotRun;
                     }
-                    else
-                    {
-                        Log("avastclear.exe exited with code " + proc.ExitCode);
-                    }
+
+                    Log("avastclear.exe exited with code " + proc.ExitCode + " after " + (started.ElapsedMilliseconds / 1000) + "s");
+                    return proc.ExitCode;
                 }
             }
             finally
@@ -1027,13 +1188,46 @@ namespace frm_avast_uninstaller
         // ── Boot helpers ─────────────────────────────────────────────────
         private static void RemoveSafebootAndRestart()
         {
-            int rc = RunSysCmd("bcdedit.exe", "/deletevalue {current} safeboot");
+            string output;
+            int rc = RunSysCmdCapture("bcdedit.exe", "/deletevalue {current} safeboot", out output);
             if (rc != 0)
-                Log("WARNING: bcdedit deletevalue safeboot failed: " + rc);
+            {
+                if (output.IndexOf("not found", StringComparison.OrdinalIgnoreCase) >= 0)
+                    Log("bcdedit: safeboot already cleared.");
+                else
+                    Log("WARNING: bcdedit deletevalue safeboot failed: " + rc + " — " + output.Trim());
+            }
 
             try { RunSysCmd("bcdedit.exe", "/deletevalue {current} safebootalternateshell"); } catch { }
 
             RunSysCmd("shutdown.exe", "/r /t 10");
+        }
+
+        private static int RunSysCmdCapture(string exe, string args, out string output)
+        {
+            output = "";
+            try
+            {
+                using (var p = Process.Start(new ProcessStartInfo(GetSysPath(exe))
+                {
+                    Arguments = args,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                }))
+                {
+                    if (p == null) return -1;
+                    output = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+                    p.WaitForExit();
+                    return p.ExitCode;
+                }
+            }
+            catch (Exception ex)
+            {
+                output = ex.Message;
+                return -1;
+            }
         }
 
         private static void FlushRegistry()
