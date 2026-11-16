@@ -55,7 +55,7 @@ namespace frm_avast_uninstaller
             _toolTip.SetToolTip(btnNoSafeMode, Loc.T("tip_nosafemode"));
             _toolTip.SetToolTip(chkClean, Loc.T("tip_clean"));
 
-            bool avast = Program.AvastInstalled();
+            bool avast = Program.AvastCoreInstalled();
             if (!avast)
             {
                 lblStatus.Text = Loc.T("no_avast_normal");
@@ -95,7 +95,7 @@ namespace frm_avast_uninstaller
 
             if (!_abortPhase)
             {
-                bool avast = Program.AvastInstalled();
+                bool avast = Program.AvastCoreInstalled();
                 lblStatus.Text = avast ? Loc.T("status_normal") : Loc.T("no_avast_normal");
             }
 
@@ -545,7 +545,7 @@ namespace frm_avast_uninstaller
 
             Program.RunEmbeddedUninstaller(interactive: true);
 
-            if (chkClean.Checked)
+            if (chkClean.Checked && !Program.AvastCoreInstalled())
                 Program.CleanAvastLeftovers();
 
             bool still = Program.AvastInstalled();
