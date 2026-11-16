@@ -11,20 +11,40 @@ namespace frm_avast_uninstaller
         public static string FormTitle =>
             Vi ? "Công cụ gỡ cài đặt Avast" : "Avast Uninstaller Support Tool";
 
+        public static string HeaderSubtitle =>
+            Vi ? "Gỡ bỏ hoàn toàn Avast Antivirus qua Safe Mode"
+               : "Completely remove Avast Antivirus via Safe Mode";
+
+        public static string StepLabel =>
+            Vi ? "BƯỚC 1 / 3  —  CHUẨN BỊ KHỞI ĐỘNG LẠI"
+               : "STEP 1 / 3  —  PREPARING RESTART";
+
+        public static string StepRestarting =>
+            Vi ? "BƯỚC 1 / 3  —  ĐANG KHỞI ĐỘNG LẠI..."
+               : "STEP 1 / 3  —  RESTARTING...";
+
+        public static string StepError =>
+            Vi ? "LỖI  —  KHÔNG THỂ KHỞI ĐỘNG LẠI"
+               : "ERROR  —  RESTART FAILED";
+
         public static string NormalModeStatus =>
-            Vi ? "Công cụ sẽ khởi động vào Safe Mode để gỡ Avast."
-               : "The tool will restart into Safe Mode to remove Avast.";
+            Vi ? "Công cụ sẽ khởi động máy tính vào Safe Mode để gỡ bỏ Avast.\nVui lòng lưu tất cả công việc trước khi tiếp tục."
+               : "The tool will restart your computer into Safe Mode to remove Avast.\nPlease save all work before proceeding.";
 
         public static string RestartButton =>
-            Vi ? "Khởi động lại vào Safe Mode" : "Restart to Safe Mode";
+            Vi ? "Khởi động lại ngay" : "Restart Now";
+
+        public static string CancelButton =>
+            Vi ? "Hủy" : "Cancel";
 
         public static string Restarting =>
-            Vi ? "Đang khởi động lại vào Safe Mode..." : "Restarting into Safe Mode...";
+            Vi ? "Đang chuẩn bị khởi động lại vào Safe Mode..."
+               : "Preparing to restart into Safe Mode...";
 
         public static string ErrorPrefix => Vi ? "Lỗi: " : "Error: ";
 
         public static string Countdown(int s) =>
-            Vi ? $"Tự động khởi động lại sau: {s} giây" : $"Auto-restarting in: {s} s";
+            Vi ? $"Tự động khởi động lại sau {s} giây" : $"Auto-restarting in {s}s";
 
         // ── Program ──────────────────────────────────────────────────────
         public static string UninstallerMissing =>
@@ -85,6 +105,13 @@ namespace frm_avast_uninstaller
         public static string DonateTCB   => Vi ? "Techcombank" : "Techcombank";
         public static string DonateMoMo  => Vi ? "Ví MoMo"     : "MoMo Wallet";
         public static string DonateClose => Vi ? "Đóng"        : "Close";
+
+        // ── Report Issues ────────────────────────────────────────────────
+        public static string ReportIssue =>
+            Vi ? "Báo lỗi / Góp ý" : "Report an Issue";
+
+        public const string ReportIssueUrl =
+            "https://github.com/ThanhNguyenVN93/Avast-Uninstaller-Support-Tool/issues";
 
         // ── Errors ───────────────────────────────────────────────────────
         public static string NormalCleanupError(string msg) =>
